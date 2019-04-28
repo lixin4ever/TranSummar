@@ -17,6 +17,7 @@ def run(d_type, d_path):
 stop_words = {"-lrb-", "-rrb-", "-"}
 unk_words = {"unk", "<unk>"}
 
+"""
 def get_xy_tuple(cont, head, cfg):
     x = read_cont(cont, cfg)
     y = read_head(head, cfg)
@@ -26,7 +27,7 @@ def get_xy_tuple(cont, head, cfg):
     else:
         return None
 
-"""
+
 def load_lines(d_path, f_name, configs):
     lines = []
     f_path = d_path + f_name
@@ -43,6 +44,60 @@ def load_lines(d_path, f_name, configs):
                 lines.append(xy_tuple)
     return lines
 """
+def split_chi(s):
+    words = []
+    for e in s:
+        words += [e]
+    return words
+
+def read_q(q, dic, cfg, train):
+    lines = []
+    q = ''.join(q.split())  #####
+    words = split_chi(q)
+    for w in words:
+        if w in dic:
+            dic[w] += 1
+        else:
+            dic[w] = 1
+    num_words = len(words)
+    if num_words >= cfg.MIN_LEN_X and num_words < cfg.MAX_LEN_X:
+        lines += words
+    elif num_words >= cfg.MAX_LEN_X:
+        lines += words[0:cfg.MAX_LEN_X]
+    lines += [cfg.W_EOS]
+    return (lines, q) if len(lines) >= cfg.MIN_LEN_X and len(lines) <= cfg.MAX_LEN_X + 1 else None
+
+
+def read_r(r, dic, cfg, train):
+    lines = []
+    r = ''.join(r.split())  #####
+    words = split_chi(r)
+    ts = []
+    for w in words:
+        if w in dic:
+            dic[w] += 1
+        else:
+            dic[w] = 1
+
+    num_words = len(words)
+    if num_words >= cfg.MIN_LEN_Y and num_words <= cfg.MAX_LEN_Y:
+        lines += words
+        lines += [cfg.W_EOS]
+    elif num_words > cfg.MAX_LEN_Y:  # do not know if should be stoped
+        lines = words[0: cfg.MAX_LEN_Y + 1]  # one more word.
+
+    return (lines, r) if len(lines) >= cfg.MIN_LEN_Y and len(lines) <= cfg.MAX_LEN_Y + 1 else None
+
+def get_xy_tuple(q, r, dic, cfg, train):
+    x = read_q(q, dic, cfg, train)
+    y = read_r(r, dic, cfg, train)
+
+    if x != None and y != None:
+        return (x, y)
+    else:
+        return None
+
+
 def load_lines(d_path, f_name, dic, configs, train=False):
     lines = []
     f_path = d_path + f_name

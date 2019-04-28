@@ -63,10 +63,16 @@ class DeepmindConfigs():
     NUM_H = 8 # multi-head attention
     DROPOUT = 0.2
     NUM_L = 4 # num of layers
+    """
     MIN_LEN_X = 10
     MIN_LEN_Y = 10
     MAX_LEN_X = 400
     MAX_LEN_Y = 100
+    """
+    MIN_LEN_X = 1
+    MIN_LEN_Y = 1
+    MAX_LEN_X = 50
+    MAX_LEN_Y = 50
     MIN_NUM_X = 1
     MAX_NUM_X = 1
     MAX_NUM_Y = None
