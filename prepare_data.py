@@ -26,7 +26,8 @@ def get_xy_tuple(cont, head, cfg):
     else:
         return None
 
-def load_lines(d_path, f_name,  configs):
+"""
+def load_lines(d_path, f_name, configs):
     lines = []
     f_path = d_path + f_name
     with open(f_path, 'r') as f:
@@ -40,6 +41,22 @@ def load_lines(d_path, f_name,  configs):
                 continue
             if xy_tuple != None:
                 lines.append(xy_tuple)
+    return lines
+"""
+def load_lines(d_path, f_name, dic, configs, train=False):
+    lines = []
+    f_path = d_path + f_name
+    with open(f_path, "r") as f:
+        for line in f:
+            line = line.strip('\n').strip('\r').lower()
+            fs = line.split("\t")
+            if len(fs) == 2:
+                q, r= fs
+            else:
+                print("ERROR!!")
+            xy = get_xy_tuple(q, r, dic, configs, train)
+            if xy is not None:
+                lines.append(xy)
     return lines
 
 def load_dict(d_path, f_name, dic, dic_list):
@@ -158,49 +175,42 @@ def prepare_deepmind(d_path):
         makedirs(SUMM_PATH)
     if not exists(TMP_PATH):
         makedirs(TMP_PATH)
-    
+
+    all_dic = {}
         
-    print ("trainset...")
-    train_xy_list = load_lines(d_path, "train.txt", configs)
+    print("trainset...")
+    train_xy_list = load_lines(d_path, "train.txt", all_dic, configs, train=True)
+
+    print("validset...")
+    valid_xy_list = load_lines(d_path, "val.txt", all_dic, configs, train=False)
+
+    print(len(train_xy_list), len(valid_xy_list))
     
     print ("dump train...")
     pickle.dump(train_xy_list, open(TRAINING_PATH + "train.pkl", "wb"), protocol = pickle.HIGHEST_PROTOCOL)
-    
 
-    print ("fitering and building dict...")
-    use_abisee = True
-    all_dic1 = {}
-    all_dic2 = {}
-    dic_list = []
-    all_dic1, dic_list = load_dict(d_path, "vocab", all_dic1, dic_list)
-    all_dic2 = to_dict(train_xy_list, all_dic2)
-    for w, tf in all_dic2.items():
-        if w not in all_dic1:
-            all_dic1[w] = tf
-
-    candiate_list = dic_list[0:configs.PG_DICT_SIZE] # 50000
-    candiate_set = set(candiate_list)
+    print("fitering and building dict...")
 
     dic = {}
     w2i = {}
     i2w = {}
     w2w = {}
 
-    for w in [configs.W_PAD, configs.W_UNK, configs.W_BOS, configs.W_EOS]:
-    #for w in [configs.W_PAD, configs.W_UNK, configs.W_BOS, configs.W_EOS, configs.W_LS, configs.W_RS]:
+    for w in [configs.W_PAD, configs.W_UNK, configs.W_EOS]:
+        # for w in [configs.W_PAD, configs.W_UNK, configs.W_BOS, configs.W_EOS, configs.W_LS, configs.W_RS]:
         w2i[w] = len(dic)
         i2w[w2i[w]] = w
         dic[w] = 10000
         w2w[w] = w
 
-    for w, tf in all_dic1.items():
-        if w in candiate_set:
-            w2i[w] = len(dic)
-            i2w[w2i[w]] = w
-            dic[w] = tf
-            w2w[w] = w
-        else:
-            w2w[w] = configs.W_UNK 
+    for w, tf in all_dic.items():
+        if w in dic:
+            continue
+        w2i[w] = len(dic)
+        i2w[w2i[w]] = w
+        dic[w] = tf
+        w2w[w] = w
+
     hfw = []
     sorted_x = sorted(dic.items(), key=operator.itemgetter(1), reverse=True)
     for w in sorted_x:
@@ -208,30 +218,24 @@ def prepare_deepmind(d_path):
 
     assert len(hfw) == len(dic)
     assert len(w2i) == len(dic)
-    print ("dump dict...")
-    pickle.dump([all_dic1, dic, hfw, w2i, i2w, w2w], open(TRAINING_PATH + "dic.pkl", "wb"), protocol = pickle.HIGHEST_PROTOCOL)
-    
-    print ("testset...")
-    test_xy_list = load_lines(d_path, "test.txt", configs)
+    print("dump dict...")
+    pickle.dump([all_dic, dic, hfw, w2i, i2w, w2w], open(TRAINING_PATH + "dic.pkl", "wb"),
+                protocol=pickle.HIGHEST_PROTOCOL)
 
-    print ("validset...")
-    valid_xy_list = load_lines(d_path, "val.txt", configs)
+    print("testset...")
+    test_xy_list = load_lines(d_path, "test.txt", all_dic, configs, train=False)
 
+    print("#train = ", len(train_xy_list))
+    print("#test = ", len(test_xy_list))
+    print("#validate = ", len(valid_xy_list))
 
-    print ("#train = ", len(train_xy_list))
-    print ("#test = ", len(test_xy_list))
-    print ("#validate = ", len(valid_xy_list))
-        
-    print ("#all_dic = ", len(all_dic1), ", #dic = ", len(dic), ", #hfw = ", len(hfw))
+    print("#all_dic = ", len(all_dic), ", #dic = ", len(dic), ", #hfw = ", len(hfw))
 
-    print ("dump test...")
-    pickle.dump(test_xy_list, open(TESTING_PATH + "test.pkl", "wb"), protocol = pickle.HIGHEST_PROTOCOL)
-    shuffle(test_xy_list)
-    pickle.dump(test_xy_list[0:2000], open(TESTING_PATH + "pj2000.pkl", "wb"), protocol = pickle.HIGHEST_PROTOCOL)
+    print("dump test...")
+    pickle.dump(test_xy_list, open(TESTING_PATH + "test.pkl", "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
-    print ("dump validate...")
-    pickle.dump(valid_xy_list, open(VALIDATE_PATH + "valid.pkl", "wb"), protocol = pickle.HIGHEST_PROTOCOL)
-    pickle.dump(valid_xy_list[0:1000], open(VALIDATE_PATH + "pj1000.pkl", "wb"), protocol = pickle.HIGHEST_PROTOCOL)
+    print("dump validate...")
+    pickle.dump(valid_xy_list, open(VALIDATE_PATH + "valid.pkl", "wb"), protocol=pickle.HIGHEST_PROTOCOL)
     
     print ("done.")
 
@@ -240,8 +244,9 @@ if __name__ == "__main__":
     parser.add_argument("-d", "--data", default="cnndm", help="dataset path", )
     args = parser.parse_args()
 
-    data_type = "cnndm"
-    raw_path = "/home/pijili/data/summarization-data/SDS/cnndm-pj/"
+    data_type = "bot"
+    #raw_path = "/home/pijili/data/summarization-data/SDS/cnndm-pj/"
+    raw_path = "home/tedxli/dataset/dialog-700w/"
 
     print (data_type, raw_path)
     run(data_type, raw_path)

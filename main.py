@@ -49,14 +49,17 @@ def print_basic_info(modules, consts, options):
     for k in consts:
         print(k + ":", consts[k])
 
-def init_modules():
+def init_modules(is_predicting):
     
     init_seeds()
 
     options = {}
 
     options["is_debugging"] = False
-    options["is_predicting"] = False
+    if is_predicting:
+        options["is_predicting"] = True
+    else:
+        options["is_predicting"] = False
     options["model_selection"] = False # When options["is_predicting"] = True, true means use validation set for tuning, false is real testing.
 
     options["cuda"] = cfg.CUDA and torch.cuda.is_available()
@@ -344,10 +347,7 @@ def predict(model, modules, consts, options):
     rebuild_dir(cfg.cc.SUMM_PATH)
 
     print("loading test set...")
-    if options["model_selection"]:
-        xy_list = pickle.load(open(cfg.cc.VALIDATE_DATA_PATH + "pj1000.pkl", "rb")) 
-    else:
-        xy_list = pickle.load(open(cfg.cc.TESTING_DATA_PATH + "test.pkl", "rb")) 
+    xy_list = pickle.load(open(cfg.cc.TESTING_DATA_PATH + "test.pkl", "rb"))
     batch_list, num_files, num_batches = datar.batched(len(xy_list), options, consts)
 
     print("num_files = ", num_files, ", num_batches = ", num_batches)
@@ -364,18 +364,18 @@ def predict(model, modules, consts, options):
         assert len(test_idx) == batch.x.shape[1] # local_batch_size
 
                     
-        word_emb, padding_mask = model.encode(torch.LongTensor(batch.x).to(options["device"]))
+        word_emb, padding_mask = model.encode(torch.LongTensor(batch.x).cuda(options["device"]))
 
         if options["beam_decoding"]:
             for idx_s in range(len(test_idx)):
                 if options["copy"]:
-                    inputx = (torch.LongTensor(batch.x_ext[:, idx_s]).to(options["device"]), \
-                            torch.FloatTensor(batch.x_mask[:, idx_s, :]).to(options["device"]), \
+                    inputx = (torch.LongTensor(batch.x_ext[:, idx_s]).cuda(options["device"]), \
+                            torch.FloatTensor(batch.x_mask[:, idx_s, :]).cuda(options["device"]), \
                           word_emb[:, idx_s, :], padding_mask[:, idx_s],\
                           batch.y[:, idx_s], [batch.len_y[idx_s]], batch.original_summarys[idx_s],\
                           batch.max_ext_len, batch.x_ext_words[idx_s])
                 else:
-                    inputx = (torch.LongTensor(batch.x[:, idx_s]).to(options["device"]), word_emb[:, idx_s, :], padding_mask[:, idx_s],\
+                    inputx = (torch.LongTensor(batch.x[:, idx_s]).cuda(options["device"]), word_emb[:, idx_s, :], padding_mask[:, idx_s],\
                               batch.y[:, idx_s], [batch.len_y[idx_s]], batch.original_summarys[idx_s])
 
                 beam_decode(si, inputx, model, modules, consts, options)
@@ -392,8 +392,8 @@ def predict(model, modules, consts, options):
             partial_num = 0
     print (si, total_num)
 
-def run(existing_model_name = None):
-    modules, consts, options = init_modules()
+def run(existing_model_name=None, is_predicting=0):
+    modules, consts, options = init_modules(is_predicting)
 
     if options["is_predicting"]:
         need_load_model = True
@@ -408,12 +408,12 @@ def run(existing_model_name = None):
 
     if training_model:
         print ("loading train set...")
-        if options["is_debugging"]:
-            xy_list = pickle.load(open(cfg.cc.TESTING_DATA_PATH + "test.pkl", "rb")) 
-        else:
-            xy_list = pickle.load(open(cfg.cc.TRAINING_DATA_PATH + "train.pkl", "rb")) 
-        batch_list, num_files, num_batches = datar.batched(len(xy_list), options, consts)
-        print ("num_files = ", num_files, ", num_batches = ", num_batches)
+        train_xy_list = pickle.load(open(cfg.cc.TRAINING_DATA_PATH + "train.pkl", "rb"))
+        val_xy_list = pickle.load(open(cfg.cc.VALIDATE_DATA_PATH+"val.pkl", "rb"))
+        train_batch_list, train_size, n_train_batches = datar.batched(len(train_xy_list), options, consts)
+        val_batch_list, val_size, n_val_batches = datar.batched(len(val_xy_list), options, consts)
+        print("train size =", train_size, ", num training batches =", n_train_batches)
+        print("val size =", val_size, ", num validation batches =", n_val_batches)
 
     running_start = time.time()
     if True: #TODO: refactor
@@ -423,7 +423,7 @@ def run(existing_model_name = None):
             model.cuda()
         optimizer = torch.optim.Adagrad(model.parameters(), lr=consts["lr"], initial_accumulator_value=0.1)
         
-        model_name = "".join(["cnndm.s2s.", options["cell"]])
+        model_name = "".join(["s2s.", options["cell"]])
         existing_epoch = 0
         if need_load_model:
             if existing_model_name == None:
@@ -433,41 +433,43 @@ def run(existing_model_name = None):
 
         if training_model:
             print ("start training model ")
-            model.train()
-            print_size = num_files // consts["print_time"] if num_files >= consts["print_time"] else num_files
+
+            #print_size = num_files // consts["print_time"] if num_files >= consts["print_time"] else num_files
 
             last_total_error = float("inf")
+            best_val_loss = 999999999.0
             print ("max epoch:", consts["max_epoch"])
             for epoch in range(0, consts["max_epoch"]):
-                print ("epoch: ", epoch + existing_epoch)
+                print ("epoch %s:" % (epoch + existing_epoch))
                 num_partial = 1
-                total_error = 0.0
+                train_loss = 0.0
                 error_c = 0.0
                 partial_num_files = 0
                 epoch_start = time.time()
                 partial_start = time.time()
                 # shuffle the trainset
-                batch_list, num_files, num_batches = datar.batched(len(xy_list), options, consts)
-                used_batch = 0.
-                for idx_batch in range(num_batches):
-                    train_idx = batch_list[idx_batch]
-                    batch_raw = [xy_list[xy_idx] for xy_idx in train_idx]
-                    if len(batch_raw) != consts["batch_size"]:
+                train_batch_list, train_size, n_train_batches = datar.batched(len(train_xy_list), options, consts)
+                n_used_train_batch = 0
+                model.train()
+                for idx_batch in range(n_train_batches):
+                    train_idx = train_batch_list[idx_batch]
+                    train_batch_raw = [train_xy_list[xy_idx] for xy_idx in train_idx]
+                    if len(train_batch_raw) != consts["batch_size"]:
                         continue
-                    local_batch_size = len(batch_raw)
-                    batch = datar.get_data(batch_raw, modules, consts, options)
+                    local_batch_size = len(train_batch_raw)
+                    train_batch = datar.get_data(train_batch_raw, modules, consts, options)
                   
                     
                     model.zero_grad()
                     
-                    y_pred, cost = model(torch.LongTensor(batch.x).to(options["device"]),\
-                                   torch.LongTensor(batch.y_inp).to(options["device"]),\
-                                   torch.LongTensor(batch.y).to(options["device"]),\
-                                   torch.FloatTensor(batch.x_mask).to(options["device"]),\
-                                   torch.FloatTensor(batch.y_mask).to(options["device"]),\
-                                   torch.LongTensor(batch.x_ext).to(options["device"]),\
-                                   torch.LongTensor(batch.y_ext).to(options["device"]),\
-                                   batch.max_ext_len)
+                    y_pred, cost = model(torch.LongTensor(train_batch.x).cuda(options["device"]),\
+                                   torch.LongTensor(train_batch.y_inp).cuda(options["device"]),\
+                                   torch.LongTensor(train_batch.y).cuda(options["device"]),\
+                                   torch.FloatTensor(train_batch.x_mask).cuda(options["device"]),\
+                                   torch.FloatTensor(train_batch.y_mask).cuda(options["device"]),\
+                                   torch.LongTensor(train_batch.x_ext).cuda(options["device"]),\
+                                   torch.LongTensor(train_batch.y_ext).cuda(options["device"]), \
+                                         train_batch.max_ext_len)
 
 
                     cost.backward()
@@ -476,9 +478,10 @@ def run(existing_model_name = None):
 
                     
                     cost = cost.item()
-                    total_error += cost
-                    used_batch += 1
+                    train_loss += cost
+                    n_used_train_batch += 1
                     partial_num_files += consts["batch_size"]
+                    """
                     if partial_num_files // print_size == 1 and idx_batch < num_batches:
                         print (idx_batch + 1, "/" , num_batches, "batches have been processed,", \
                                 "average cost until now:", "cost =", total_error / used_batch, ",", \
@@ -494,32 +497,39 @@ def run(existing_model_name = None):
 
                             print("finished")
                         num_partial += 1
-                print ("in this epoch, total average cost =", total_error / used_batch, ",", \
-                        "cost_c =", error_c / used_batch, ",",\
-                        "time:", time.time() - epoch_start)
+                    """
+                elapsed_time = time.time() - epoch_start
 
-                print_sent_dec(y_pred, batch.y, batch.y_mask, batch.x_ext_words, modules, consts, options, local_batch_size)
-                
-                if last_total_error > total_error or options["is_debugging"]:
-                    last_total_error = total_error
-                    if not options["is_debugging"]:
-                        print ("save model... ",)
-                        file_name =  model_name + ".gpu" + str(consts["idx_gpu"]) + ".epoch" + str(epoch // consts["save_epoch"] + existing_epoch) + "." + str(num_partial)
-                        save_model(cfg.cc.MODEL_PATH + file_name, model, optimizer)
-                        if options["fire"]:
-                            shutil.move(cfg.cc.MODEL_PATH + file_name, "/out/")
-
-                        print ("finished")
-                else:
-                    print ("optimization finished")
-                    break
-
-            print ("save final model... "),
-            file_name = model_name + ".final.gpu" + str(consts["idx_gpu"]) + ".epoch" + str(epoch // consts["save_epoch"] + existing_epoch) + "." + str(num_partial)
-            save_model(cfg.cc.MODEL_PATH + file_name, model, optimizer)
-            if options["fire"]:
-                shutil.move(cfg.cc.MODEL_PATH + file_name, "/out/")
-
+                model.eval()
+                n_used_val_batch = 0
+                val_loss = 0.0
+                with torch.no_grad():
+                    for idx_batch in range(n_val_batches):
+                        val_idx = val_batch_list[idx_batch]
+                        val_batch_raw = [val_xy_list[xy_idx] for xy_idx in val_idx]
+                        if len(val_batch_raw) != consts["batch_size"]:
+                            continue
+                        local_batch_size = len(val_batch_raw)
+                        val_batch = datar.get_data(val_batch_raw, modules, consts, options)
+                        y_pred, cost = model(torch.LongTensor(val_batch.x).cuda(options["device"]), \
+                                             torch.LongTensor(val_batch.y_inp).cuda(options["device"]), \
+                                             torch.LongTensor(val_batch.y).cuda(options["device"]), \
+                                             torch.FloatTensor(val_batch.x_mask).cuda(options["device"]), \
+                                             torch.FloatTensor(val_batch.y_mask).cuda(options["device"]), \
+                                             torch.LongTensor(val_batch.x_ext).cuda(options["device"]), \
+                                             torch.LongTensor(val_batch.y_ext).cuda(options["device"]), \
+                                             val_batch.max_ext_len)
+                        n_used_val_batch += 1
+                        val_loss += cost.item()
+                val_loss /= float(n_used_val_batch)
+                print("in this epoch, training loss =", train_loss / n_used_train_batch,
+                      ", validation loss =", val_loss,
+                      ", time:", elapsed_time)
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    filename = cfg.cc.MODEL_PATH + model_name + "_checkpoint_epoch%s.pkl" % (epoch + 1)
+                    print("Exceed! save the model to %s..." % filename)
+                    save_model(filename, model, optimizer)
             print ("finished")
         else:
             print ("skip training model")
@@ -530,5 +540,14 @@ def run(existing_model_name = None):
 
 if __name__ == "__main__":
     np.set_printoptions(threshold = np.inf)
-    existing_model_name = sys.argv[1] if len(sys.argv) > 1 else None
-    run(existing_model_name)
+    #existing_model_name = sys.argv[1] if len(sys.argv) > 1 else None
+    args = sys.argv
+    if len(args) == 2:
+        existing_model_name = None
+        is_predicting = args[1]
+    elif len(args) == 3:
+        existing_model_name = args[1]
+        is_predicting = args[2]
+    else:
+        raise Exception("Unsupported running mode!!!")
+    run(existing_model_name, is_predicting)
