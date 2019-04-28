@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import os
-cudaid = 0
+cudaid = 4
 os.environ["CUDA_VISIBLE_DEVICES"] = str(cudaid)
 
 import sys
