@@ -394,7 +394,7 @@ def predict(model, modules, consts, options):
 
 def run(existing_model_name=None, is_predicting=0):
     modules, consts, options = init_modules(is_predicting)
-
+    #print("value:", options["is_predicting"])
     if options["is_predicting"]:
         need_load_model = True
         training_model = False
@@ -409,7 +409,7 @@ def run(existing_model_name=None, is_predicting=0):
     if training_model:
         print ("loading train set...")
         train_xy_list = pickle.load(open(cfg.cc.TRAINING_DATA_PATH + "train.pkl", "rb"))
-        val_xy_list = pickle.load(open(cfg.cc.VALIDATE_DATA_PATH+"val.pkl", "rb"))
+        val_xy_list = pickle.load(open(cfg.cc.VALIDATE_DATA_PATH+"valid.pkl", "rb"))
         train_batch_list, train_size, n_train_batches = datar.batched(len(train_xy_list), options, consts)
         val_batch_list, val_size, n_val_batches = datar.batched(len(val_xy_list), options, consts)
         print("train size =", train_size, ", num training batches =", n_train_batches)
@@ -481,6 +481,9 @@ def run(existing_model_name=None, is_predicting=0):
                     train_loss += cost
                     n_used_train_batch += 1
                     partial_num_files += consts["batch_size"]
+                    if n_used_train_batch % 10000 == 0:
+                        print("\tprocessed %s batches..." % n_used_train_batch)
+                        #break
                     """
                     if partial_num_files // print_size == 1 and idx_batch < num_batches:
                         print (idx_batch + 1, "/" , num_batches, "batches have been processed,", \
@@ -544,10 +547,10 @@ if __name__ == "__main__":
     args = sys.argv
     if len(args) == 2:
         existing_model_name = None
-        is_predicting = args[1]
+        is_predicting = int(args[1])
     elif len(args) == 3:
         existing_model_name = args[1]
-        is_predicting = args[2]
+        is_predicting = int(args[2])
     else:
         raise Exception("Unsupported running mode!!!")
     run(existing_model_name, is_predicting)

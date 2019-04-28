@@ -251,7 +251,7 @@ def prepare_deepmind(d_path):
     i2w = {}
     w2w = {}
 
-    for w in [configs.W_PAD, configs.W_UNK, configs.W_EOS]:
+    for w in [configs.W_PAD, configs.W_UNK, configs.W_EOS, configs.W_BOS]:
         # for w in [configs.W_PAD, configs.W_UNK, configs.W_BOS, configs.W_EOS, configs.W_LS, configs.W_RS]:
         w2i[w] = len(dic)
         i2w[w2i[w]] = w
