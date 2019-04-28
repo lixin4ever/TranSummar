@@ -156,9 +156,9 @@ def beam_decode(fname, batch, model, modules, consts, options):
     last_states = [[]]
 
     if options["copy"]:
-        x, x_mask, word_emb, padding_mask, y, len_y, ref_sents, max_ext_len, oovs = batch
+        x, x_mask, word_emb, padding_mask, y, len_y, ref_sents, max_ext_len, oovs, query = batch
     else:
-        x, word_emb, padding_mask, y, len_y, ref_sents = batch
+        x, word_emb, padding_mask, y, len_y, ref_sents, query = batch
 
     ys = torch.LongTensor(np.ones((1, num_live), dtype="int64") * modules["bos_idx"]).to(options["device"])
     x = x.unsqueeze(1)
@@ -325,13 +325,29 @@ def beam_decode(fname, batch, model, modules, consts, options):
     
     write_for_rouge(fname, ref_sents, dec_words, cfg)
 
+    out_f = cfg.cc.RESULT_PATH + "out.txt"
+    with open(out_f, "a") as f:
+        s = ''.join(query.split()) + "\t" + ''.join(ref_sents.split()) + "\t" + ''.join(dec_words) +"\n"
+        f.write(s)
+
+
+    # only write the predicted responses for calculating distinct scores
+    pred_resp_file = cfg.cc.RESULT_PATH + 'pred_resp.txt'
+    with open(pred_resp_file, 'a', encoding='UTF-8') as fp:
+        s = ' '.join(dec_words) + '\n'
+        fp.write(s)
+
+    gold_resp_file = cfg.cc.RESULT_PATH + 'gold_resp.txt'
+    # char-based output, only for evaluation
+    with open(gold_resp_file, 'a', encoding='UTF-8') as fp:
+        s = ' '.join([w for w in ''.join(ref_sents.split())]) + '\n'
+        fp.write(s)
+
     # beam search history for checking
     if not options["copy"]:
         oovs = None
     write_summ("".join((cfg.cc.BEAM_SUMM_PATH, fname)), sorted_samples, num_samples, options, modules["i2w"], oovs, sorted_scores)
-    write_summ("".join((cfg.cc.BEAM_GT_PATH, fname)), y_true, 1, options, modules["i2w"], oovs) 
-
-
+    write_summ("".join((cfg.cc.BEAM_GT_PATH, fname)), y_true, 1, options, modules["i2w"], oovs)
 
 def predict(model, modules, consts, options):
     print("start predicting,")
@@ -351,6 +367,18 @@ def predict(model, modules, consts, options):
     batch_list, num_files, num_batches = datar.batched(len(xy_list), options, consts)
 
     print("num_files = ", num_files, ", num_batches = ", num_batches)
+
+    of = cfg.cc.RESULT_PATH + "out.txt"
+    if os.path.exists(of):
+        os.remove(of)
+
+    pred_resp_file = cfg.cc.RESULT_PATH + 'pred_resp.txt'
+    if os.path.exists(pred_resp_file):
+        os.remove(pred_resp_file)
+
+    gold_resp_file = cfg.cc.RESULT_PATH + 'gold_resp.txt'
+    if os.path.exists(gold_resp_file):
+        os.remove(gold_resp_file)
     
     running_start = time.time()
     partial_num = 0
@@ -373,10 +401,10 @@ def predict(model, modules, consts, options):
                             torch.FloatTensor(batch.x_mask[:, idx_s, :]).cuda(options["device"]), \
                           word_emb[:, idx_s, :], padding_mask[:, idx_s],\
                           batch.y[:, idx_s], [batch.len_y[idx_s]], batch.original_summarys[idx_s],\
-                          batch.max_ext_len, batch.x_ext_words[idx_s])
+                          batch.max_ext_len, batch.x_ext_words[idx_s], batch.original_contents)
                 else:
                     inputx = (torch.LongTensor(batch.x[:, idx_s]).cuda(options["device"]), word_emb[:, idx_s, :], padding_mask[:, idx_s],\
-                              batch.y[:, idx_s], [batch.len_y[idx_s]], batch.original_summarys[idx_s])
+                              batch.y[:, idx_s], [batch.len_y[idx_s]], batch.original_summarys[idx_s], batch.original_contents)
 
                 beam_decode(si, inputx, model, modules, consts, options)
                 si += 1
@@ -390,6 +418,10 @@ def predict(model, modules, consts, options):
         if partial_num >= consts["testing_print_size"]:
             print(total_num, "summs are generated")
             partial_num = 0
+    pred_dist_file = cfg.cc.RESULT_PATH + 'pred_resp_dist.txt'
+    print("Calculating distinct metrics...")
+    os.system('python distinct_topk.py 1927 < %s > %s' % (pred_resp_file, pred_dist_file))
+    os.system('perl multi-bleu.perl %s < %s' % (gold_resp_file, pred_resp_file))
     print (si, total_num)
 
 def run(existing_model_name=None, is_predicting=0):
@@ -481,7 +513,7 @@ def run(existing_model_name=None, is_predicting=0):
                     train_loss += cost
                     n_used_train_batch += 1
                     partial_num_files += consts["batch_size"]
-                    if n_used_train_batch % 10000 == 0:
+                    if n_used_train_batch % 3000 == 0:
                         print("\tprocessed %s batches..." % n_used_train_batch)
                         #break
                     """

@@ -18,17 +18,21 @@ class CommonConfigs(object):
 
 
 class DeepmindTraining(object):
-    IS_UNICODE = False
+    IS_UNICODE = True
     REMOVES_PUNCTION = False
     HAS_Y = True
-    BATCH_SIZE = 32
+    BATCH_SIZE = 128
 
 class DeepmindTesting(object):
-    IS_UNICODE = False
+    IS_UNICODE = True
     HAS_Y = True
-    BATCH_SIZE = 80
+    BATCH_SIZE = 100
+    """
     MIN_LEN_PREDICT = 35
     MAX_LEN_PREDICT = 120
+    """
+    MIN_LEN_PREDICT = 1
+    MAX_LEN_PREDICT = 50
     MAX_BYTE_PREDICT = None
     PRINT_SIZE = 500
     REMOVES_PUNCTION = False
