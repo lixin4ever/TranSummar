@@ -246,7 +246,7 @@ if __name__ == "__main__":
 
     data_type = "bot"
     #raw_path = "/home/pijili/data/summarization-data/SDS/cnndm-pj/"
-    raw_path = "home/tedxli/dataset/dialog-700w/"
+    raw_path = "/home/tedxli/dataset/dialog-700w/"
 
     print (data_type, raw_path)
     run(data_type, raw_path)
