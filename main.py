@@ -324,7 +324,7 @@ def beam_decode(fname, batch, model, modules, consts, options):
             dec_words.append(oovs[e - len(modules["i2w"])])
     
     write_for_rouge(fname, ref_sents, dec_words, cfg)
-
+    #print(query, ref_sents)
     out_f = cfg.cc.RESULT_PATH + "out.txt"
     with open(out_f, "a") as f:
         s = ''.join(query.split()) + "\t" + ''.join(ref_sents.split()) + "\t" + ''.join(dec_words) +"\n"
@@ -401,10 +401,10 @@ def predict(model, modules, consts, options):
                             torch.FloatTensor(batch.x_mask[:, idx_s, :]).cuda(options["device"]), \
                           word_emb[:, idx_s, :], padding_mask[:, idx_s],\
                           batch.y[:, idx_s], [batch.len_y[idx_s]], batch.original_summarys[idx_s],\
-                          batch.max_ext_len, batch.x_ext_words[idx_s], batch.original_contents)
+                          batch.max_ext_len, batch.x_ext_words[idx_s], batch.original_contents[idx_s])
                 else:
                     inputx = (torch.LongTensor(batch.x[:, idx_s]).cuda(options["device"]), word_emb[:, idx_s, :], padding_mask[:, idx_s],\
-                              batch.y[:, idx_s], [batch.len_y[idx_s]], batch.original_summarys[idx_s], batch.original_contents)
+                              batch.y[:, idx_s], [batch.len_y[idx_s]], batch.original_summarys[idx_s], batch.original_contents[idx_s])
 
                 beam_decode(si, inputx, model, modules, consts, options)
                 si += 1

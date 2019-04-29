@@ -18,13 +18,13 @@ class CommonConfigs(object):
 
 
 class DeepmindTraining(object):
-    IS_UNICODE = True
+    IS_UNICODE = False
     REMOVES_PUNCTION = False
     HAS_Y = True
     BATCH_SIZE = 128
 
 class DeepmindTesting(object):
-    IS_UNICODE = True
+    IS_UNICODE = False
     HAS_Y = True
     BATCH_SIZE = 100
     """
